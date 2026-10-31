@@ -1,0 +1,7 @@
+{
+  "name": "desarrollo-infantil",
+  "private": true,
+  "scripts": {
+    "css": "npx --yes sass --no-source-map --style=compressed desarrollo.scss desarrollo.css"
+  }
+}
