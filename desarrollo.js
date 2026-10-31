@@ -6,7 +6,7 @@
  * La clé secrète n'est jamais dans le code : elle va dans le lien, https://…github.io/desarrollo-infantil/#k=TA_CLE
  * Sans API_URL ou sans clé, tout reste seulement sur le téléphone.
  */
-const API_URL = '';
+const API_URL = 'https://script.google.com/macros/s/AKfycbz0swANagnjPZErft_7n6CYePFPgfyi6n7pzJ9W1VZf5R4cuHqo_N08Q_RHxirc5pGV/exec';
 /* =============================================================== */
 // ---------- Données ----------
 // Items : [catégorie, n°, âge 50 %, âge 75 %, âge 95 % (mois), fr, es]
