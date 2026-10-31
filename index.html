@@ -26,6 +26,7 @@
   </div>
 </header>
 <main>
+  <div class="row tabs" id="tabs" role="group"></div>
   <div class="row views" role="group">
     <button class="chip" data-v="soon" id="vSoon"></button>
     <button class="chip" data-v="all" id="vAll"></button>
@@ -33,12 +34,12 @@
   <details class="filters">
     <summary id="fsum"></summary>
     <input class="search" id="q" type="search" autocomplete="off">
-    <div class="lbl" id="l1"></div>
-    <div class="row" id="cats"></div>
+    <div id="catBlock"><div class="lbl" id="l1"></div>
+    <div class="row" id="cats"></div></div>
     <div class="lbl" id="l2"></div>
     <div class="row" id="ages"></div>
-    <div class="lbl" id="l3"></div>
-    <div class="row" id="sts"></div>
+    <div id="stBlock"><div class="lbl" id="l3"></div>
+    <div class="row" id="sts"></div></div>
     <button class="reset" id="reset" type="button" hidden></button>
   </details>
   <div class="need" id="needAge" hidden></div>

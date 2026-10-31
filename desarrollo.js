@@ -180,6 +180,7 @@ Object.assign(T.fr,{
   lStatus:'Statut',recent:'Vient d’apparaître',soon:'Arrive bientôt',ongoing:'Alertes à surveiller maintenant',
   tagRecent:'récent',tagSoon:'bientôt',acquired:'acquis',done:'fait',minus:'Moins un mois',plus:'Plus un mois',
   needAge:'Renseigne l’âge de ton enfant pour afficher la vue « Bientôt ».',nothingSoon:'Rien de prévu dans cette période.',
+  tabLearn:'Apprentissages',tabSa:'Alertes',tabVac:'Vaccins',vacRecent:'À jour ?',
   reset:'Tout décocher',confirmReset:'Décocher tous les éléments ?',saved:'Sauvegardé sur ce téléphone'});
 Object.assign(T.es,{
   ageLabel:'Mi hijo/a tiene',ageUnit:'meses',ageHint:'Indica la edad para ver lo que llega pronto.',
@@ -187,11 +188,12 @@ Object.assign(T.es,{
   lStatus:'Estado',recent:'Acaba de aparecer',soon:'Llega pronto',ongoing:'Señales de alerta a vigilar ahora',
   tagRecent:'reciente',tagSoon:'pronto',acquired:'adquiridos',done:'hecho',minus:'Un mes menos',plus:'Un mes más',
   needAge:'Indica la edad de tu hijo/a para mostrar la vista «Pronto».',nothingSoon:'Nada previsto en este periodo.',
+  tabLearn:'Aprendizajes',tabSa:'Alertas',tabVac:'Vacunas',vacRecent:'¿Al día?',
   reset:'Desmarcar todo',confirmReset:'¿Desmarcar todos los elementos?',saved:'Guardado en este teléfono'});
 
 // ---------- État (sauvegardé sur le téléphone) ----------
 const WINDOW=3; // mois avant / après l'âge de l'enfant
-const KEY={lang:'dev-lang',age:'dev-age',view:'dev-view',done:'dev-done'};
+const KEY={lang:'dev-lang',age:'dev-age',view:'dev-view',done:'dev-done',tab:'dev-tab'};
 const store={
   get(k){try{return localStorage.getItem(k);}catch(e){return null;}},
   set(k,v){try{localStorage.setItem(k,v);}catch(e){}},
@@ -201,6 +203,7 @@ let lang=store.get(KEY.lang)==='es'?'es':'fr';
 let age=(()=>{const n=parseFloat(store.get(KEY.age));return isFinite(n)&&n>=0&&n<=216?n:null;})();
 let view=store.get(KEY.view)==='all'||store.get(KEY.view)==='soon'?store.get(KEY.view):(age!==null?'soon':'all');
 let done=new Set((()=>{try{return JSON.parse(store.get(KEY.done)||'[]');}catch(e){return [];}})());
+let tab=['learn','sa','vac'].includes(store.get(KEY.tab))?store.get(KEY.tab):'learn';
 let cat='all', band=-1, status='all', q='';
 
 const $=id=>document.getElementById(id);
@@ -220,6 +223,8 @@ for(const r of I){
 for(const v of V) ALL.push({k:'vac',cat:'vac',id:'💉',key:'v'+v[0],a:v[0],lab:v,list:v[3]});
 ALL.sort((x,y)=>x.a-y.a||String(x.id).localeCompare(String(y.id),undefined,{numeric:true}));
 const trackable=e=>e.k!=='sa';
+const tabOf=e=>e.k==='it'?'learn':e.k;
+const TAB_COL={learn:'var(--accent)',sa:'var(--sa)',vac:'var(--vac)'};
 
 // ---------- Position par rapport à l'âge de l'enfant ----------
 function phase(e){ // recent | soon | ongoing | null
@@ -233,17 +238,19 @@ function phase(e){ // recent | soon | ongoing | null
 // ---------- Construction des filtres (une seule fois par langue) ----------
 function buildChips(){
   const t=T[lang];
-  $('cats').innerHTML=['all','soc','lang','man','post','sa','vac'].map(c=>
-    `<button class="chip" data-c="${c}">${c==='all'?t.all:CATS[c][lang]}</button>`).join('');
-  $('ages').innerHTML=[`<button class="chip" data-b="-1">${t.allAge}</button>`]
-    .concat(BANDS.map((b,i)=>`<button class="chip" data-b="${i}">${bandLbl(b,lang)}</button>`)).join('');
-  $('sts').innerHTML=[['all',t.stAll],['todo',t.stTodo],['done',t.stDone]].map(([k,l])=>
-    `<button class="chip" data-s="${k}">${l}</button>`).join('');
+  const chip=(attr,val,label,col)=>`<button class="chip" ${attr}="${val}" style="--c:${col}">${label}</button>`;
+  $('tabs').innerHTML=[['learn',t.tabLearn],['sa',t.tabSa],['vac',t.tabVac]].map(([k,l])=>chip('data-t',k,l,TAB_COL[k])).join('');
+  $('cats').innerHTML=chip('data-c','all',t.all,'var(--accent)')+['soc','lang','man','post'].map(c=>chip('data-c',c,CATS[c][lang],CATS[c].col)).join('');
+  const bandCols=['var(--soc)','var(--lang)','var(--man)','var(--post)','var(--vac)','var(--sa)'];
+  $('ages').innerHTML=chip('data-b','-1',t.allAge,'var(--accent)')
+    +BANDS.map((b,i)=>chip('data-b',i,bandLbl(b,lang),bandCols[i%bandCols.length])).join('');
+  $('sts').innerHTML=[['all',t.stAll,'var(--accent)'],['todo',t.stTodo,'var(--soc)'],['done',t.stDone,'var(--man)']].map(([k,l,c])=>chip('data-s',k,l,c)).join('');
 }
 function pressed(){
   document.querySelectorAll('[data-c]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.c===cat));
   document.querySelectorAll('[data-b]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.b===band));
   document.querySelectorAll('[data-s]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.s===status));
+  document.querySelectorAll('[data-t]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.t===tab));
   document.querySelectorAll('[data-v]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.v===view));
   document.querySelectorAll('.lang button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.l===lang));
 }
@@ -261,16 +268,16 @@ function statics(){
 // ---------- Rendu ----------
 function card(e){
   const t=T[lang], col=CATS[e.cat].col, ph=phase(e), isDone=done.has(e.key);
-  const box=trackable(e)?`<input type="checkbox" class="ck" data-k="${e.key}" ${isDone?'checked':''} aria-label="${t.done}">`:'<span class="ck-sp"></span>';
-  const tag=ph==='recent'?`<span class="tag recent">${t.tagRecent}</span>`:ph==='soon'?`<span class="tag soon">${t.tagSoon}</span>`:'';
+  const box=trackable(e)?`<input type="checkbox" class="ck" data-k="${e.key}" ${isDone?'checked':''} aria-label="${t.done}">`:'';
+  const tag=ph==='recent'?`<span class="tag recent">${e.k==='vac'?t.vacRecent:t.tagRecent}</span>`:ph==='soon'?`<span class="tag soon">${t.tagSoon}</span>`:'';
   const cls='card'+(isDone?' is-done':'')+(ph?' ph-'+ph:'');
   if(e.k==='vac'){
     return `<label class="${cls}" style="--c:${col}">${box}<div class="t"><strong>${lang==='fr'?e.lab[1]:e.lab[2]}</strong>${tag}
-      <ul class="vlist">${e.list.map(x=>`<li>${x[lang==='fr'?0:1]}</li>`).join('')}</ul><span class="cat">${CATS.vac[lang]}</span></div></label>`;
+      <ul class="vlist">${e.list.map(x=>`<li>${x[lang==='fr'?0:1]}</li>`).join('')}</ul></div></label>`;
   }
   const a=e.k==='sa'?`${t.range} ${num(e.a)}–${num(e.b)} ${t.mo}`:`${t.from} ${fmt(e.a,lang)}`;
-  const inner=`<div class="n">${e.id}</div><div class="t">${e[lang]}${tag}<span class="cat">${CATS[e.cat][lang]}${e.k==='sa'?' · '+t.alertTag:''}</span></div><div class="a">${a}</div>`;
-  return trackable(e)?`<label class="${cls}" style="--c:${col}">${box}${inner}</label>`:`<div class="${cls}" style="--c:${col}"><span class="ck-sp"></span>${inner}</div>`;
+  const inner=`<div class="t">${e[lang]}${tag}${e.k==='it'?`<span class="cat">${CATS[e.cat][lang]}</span>`:''}</div><div class="a">${a}</div>`;
+  return trackable(e)?`<label class="${cls}" style="--c:${col}">${box}${inner}</label>`:`<div class="${cls}" style="--c:${col}">${inner}</div>`;
 }
 
 function render(){
@@ -278,8 +285,9 @@ function render(){
   const soonView=view==='soon';
   $('needAge').hidden=!(soonView&&age===null);
   const rows=ALL.filter(e=>{
+    if(tabOf(e)!==tab) return false;
     if(soonView){ if(age===null||!phase(e)) return false; }
-    if(cat!=='all'&&e.cat!==cat) return false;
+    if(tab==='learn'&&cat!=='all'&&e.cat!==cat) return false;
     if(!soonView&&band!==-1&&bandOf(e.a)!==band) return false;
     if(trackable(e)){
       if(status==='todo'&&done.has(e.key)) return false;
@@ -291,8 +299,9 @@ function render(){
     }
     return true;
   });
-  const total=ALL.filter(trackable).length, nd=[...done].filter(k=>ALL.some(e=>e.key===k)).length;
-  $('count').textContent=`${rows.length} ${rows.length===1?t.one:t.items} · ${nd}/${total} ${t.acquired}`;
+  const mine=ALL.filter(e=>tabOf(e)===tab&&trackable(e)), nd=mine.filter(e=>done.has(e.key)).length;
+  $('count').textContent=`${rows.length} ${rows.length===1?t.one:t.items}`+(mine.length?` · ${nd}/${mine.length} ${tab==='vac'?t.done:t.acquired}`:'');
+  $('catBlock').hidden=tab!=='learn'; $('stBlock').hidden=tab==='sa';
   let html='';
   if(soonView&&age!==null){
     for(const [ph,label] of [['ongoing',t.ongoing],['recent',t.recent],['soon',t.soon]]){
@@ -310,7 +319,7 @@ function render(){
     if(!rows.length) html=`<div class="empty">${t.none}</div>`;
   }
   $('list').innerHTML=html;
-  const n=$('notes'), showNotes=!soonView&&(cat==='all'||cat==='vac');
+  const n=$('notes'), showNotes=tab==='vac'&&!soonView;
   n.hidden=!showNotes;
   if(showNotes) n.innerHTML=`<strong>${t.notes}</strong>`+NOTES[lang].map(x=>`<p>${x}</p>`).join('');
   $('reset').hidden=done.size===0;
@@ -330,6 +339,7 @@ function setAge(v){
 document.addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b) return;
   if(b.dataset.l){lang=b.dataset.l;store.set(KEY.lang,lang);statics();buildChips();}
+  else if(b.dataset.t){tab=b.dataset.t;store.set(KEY.tab,tab);}
   else if(b.dataset.c) cat=b.dataset.c;
   else if(b.dataset.b!==undefined) band=+b.dataset.b;
   else if(b.dataset.s) status=b.dataset.s;
