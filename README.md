@@ -10,3 +10,7 @@ Page web bilingue (FR/ES), pensée pour le mobile : échelle de développement H
 - Après modification du SCSS : `npm run css`.
 
 Les âges sont lus sur l'échelle (début de barre = 50 %, passage blanc/gris = 75 %, fin = 95 %) ; ils sont indicatifs et ne remplacent pas l'avis du pédiatre. Les âges des signaux d'alerte restent approximatifs.
+
+## Sur l'écran d'accueil (iPhone)
+
+Safari → Partager → « Sur l'écran d'accueil ». L'icône vient de `apple-touch-icon.png` (180 × 180 px) et le nom de `apple-mobile-web-app-title` dans `index.html`. La page s'ouvre alors en plein écran, comme une app.
