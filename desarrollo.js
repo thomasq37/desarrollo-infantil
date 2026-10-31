@@ -195,7 +195,7 @@ const T = {
   needAge:'Indique la date de naissance pour voir ce qui est en cours et ce qui arrive bientôt.',
   nothingSoon:'Rien de prévu dans cette période.', reset:'Tout décocher', confirmReset:'Décocher tous les éléments ?',
   notes:'Notes du calendrier vaccinal',
-  syncOk:'☁ Synchronisé avec Google Sheets', syncSaving:'Enregistrement…', syncOffline:'Hors ligne : sera envoyé plus tard', syncError:'Synchronisation refusée : vérifie la clé du lien',
+  syncOk:'☁ Synchronisé avec Google Sheets', syncSaving:'Enregistrement…', syncOffline:'Hors ligne : sera envoyé plus tard', syncError:'Synchronisation refusée : vérifie la clé du lien', syncFail:'Une modification n’a pas pu être enregistrée dans la Sheet',
   src:'Sources : échelle Haizea-Llevant (modifiée d’après Fernández Álvarez E. et al., Tabla de desarrollo 0-5 años, Gobierno Vasco, 1991) et calendrier de vaccinations et immunisations systématiques de la Generalitat de Catalunya (061 Salut Respon, canalsalut.gencat.cat). Âges lus sur l’échelle : début de la barre = 50 % des enfants, fin = 95 %. Indicatif, ne remplace pas l’avis du pédiatre. Les données restent sur ce téléphone.'
  },
  es:{
@@ -217,7 +217,7 @@ const T = {
   needAge:'Indica la fecha de nacimiento para ver lo que está en curso y lo que llega pronto.',
   nothingSoon:'Nada previsto en este periodo.', reset:'Desmarcar todo', confirmReset:'¿Desmarcar todos los elementos?',
   notes:'Notas del calendario de vacunación',
-  syncOk:'☁ Sincronizado con Google Sheets', syncSaving:'Guardando…', syncOffline:'Sin conexión: se enviará más tarde', syncError:'Sincronización rechazada: revisa la clave del enlace',
+  syncOk:'☁ Sincronizado con Google Sheets', syncSaving:'Guardando…', syncOffline:'Sin conexión: se enviará más tarde', syncError:'Sincronización rechazada: revisa la clave del enlace', syncFail:'Un cambio no se pudo guardar en la Sheet',
   src:'Fuentes: escala Haizea-Llevant (modificada de Fernández Álvarez E. y cols., Tabla de desarrollo 0-5 años, Gobierno Vasco, 1991) y calendario de vacunaciones e inmunizaciones sistemáticas de la Generalitat de Catalunya (061 Salut Respon, canalsalut.gencat.cat). Edades leídas en la escala: inicio de la barra = 50 % de los niños, final = 95 %. Orientativo, no sustituye la opinión del pediatra. Los datos se quedan en este teléfono.'
  }
 };
@@ -425,7 +425,7 @@ function syncKey(){
 }
 const SYNC=!!API_URL&&!!syncKey();
 let syncQueue=(()=>{try{const q=JSON.parse(store.get(SKEY.queue)||'[]');return Array.isArray(q)?q:[];}catch(e){return [];}})();
-let syncState=null, flushing=false;
+let syncState=null, flushing=false, localGen=0;
 const saveQueue=()=>store.set(SKEY.queue,JSON.stringify(syncQueue));
 function labelOf(key){
   const e=ALL.find(x=>x.key===key); if(!e) return key;
@@ -436,16 +436,26 @@ function setSync(st){
   el.hidden=!SYNC||!st; el.className='sync '+(st||'');
   if(st) el.textContent=T[lang]['sync'+st.charAt(0).toUpperCase()+st.slice(1)];
 }
-function pushSync(op){ if(!SYNC) return; syncQueue.push(op); saveQueue(); flush(); }
+function pushSync(op){
+  if(!SYNC) return;
+  localGen++;
+  // une seule date de naissance en attente : la dernière choisie (sauf celle déjà en cours d'envoi)
+  if(op.action==='birth') syncQueue=syncQueue.filter((o,i)=>o.action!=='birth'||(flushing&&i===0));
+  syncQueue.push(op); saveQueue(); flush();
+}
 function applyServer(j){
-  done=j.done&&typeof j.done==='object'?j.done:{}; saveDone();
-  birth=isISO(j.birth)?j.birth:null;
-  if(birth) store.set(KEY.birth,birth); else store.del(KEY.birth);
+  // La Sheet fait foi pour la liste des éléments cochés. Une date illisible côté Sheet
+  // n'efface jamais une date valable déjà connue du téléphone.
+  const srv=j.done&&typeof j.done==='object'?j.done:{}, merged={};
+  for(const k in srv) merged[k]=isISO(srv[k])?srv[k]:(isISO(done[k])?done[k]:'');
+  done=merged; saveDone();
+  if(isISO(j.birth)){ birth=j.birth; store.set(KEY.birth,birth); }
   $('birth').value=birth||'';
   render();
 }
 async function flush(){
   if(!SYNC||flushing) return; flushing=true;
+  let failed=false;
   try{
     while(syncQueue.length){
       setSync('saving');
@@ -456,28 +466,31 @@ async function flush(){
       }catch(e){ setSync('offline'); return; }
       if(j.error==='unauthorized'){ setSync('error'); return; }
       syncQueue.shift(); saveQueue();          // une opération refusée pour une autre raison est abandonnée
-      if(!j.error&&!syncQueue.length) applyServer(j);
+      if(j.error){ failed=true; continue; }
+      if(!syncQueue.length) applyServer(j);
     }
-    setSync('ok');
+    setSync(failed?'fail':'ok');
   } finally { flushing=false; }
 }
 async function pull(){
   if(!SYNC) return;
   if(syncQueue.length) return flush();        // envoyer d'abord ce qui attend
+  const gen=localGen;
   setSync('saving');
   let j;
   try{ j=await (await fetch(`${API_URL}?k=${encodeURIComponent(syncKey())}&t=${Date.now()}`)).json(); }
   catch(e){ setSync('offline'); return; }
   if(j.error){ setSync(j.error==='unauthorized'?'error':'offline'); return; }
-  if(syncQueue.length) return flush();        // l'utilisateur a modifié entre-temps
-  const empty=!Object.keys(j.done||{}).length&&!j.birth;
-  if(empty&&!store.get(SKEY.synced)&&(Object.keys(done).length||birth)){
-    // première synchronisation : on envoie ce qui était déjà sur le téléphone
+  if(syncQueue.length||gen!==localGen) return flush();   // modifié pendant la requête : la réponse est périmée
+  if(!store.get(SKEY.synced)){
+    // première synchronisation de ce téléphone (ou de l'app de l'écran d'accueil) :
+    // on ajoute à la Sheet ce qu'elle n'a pas encore, sans rien effacer
     store.set(SKEY.synced,'1');
-    const items={}; for(const k in done) items[k]={date:done[k],label:labelOf(k)};
-    return pushSync({action:'import',done:items,birth:birth||''});
+    const srv=j.done||{}, items={};
+    for(const k in done) if(!(k in srv)) items[k]={date:done[k],label:labelOf(k)};
+    const needBirth=!!birth&&!isISO(j.birth);
+    if(Object.keys(items).length||needBirth) return pushSync({action:'import',done:items,birth:needBirth?birth:''});
   }
-  store.set(SKEY.synced,'1');
   applyServer(j); setSync('ok');
 }
 window.addEventListener('online',()=>flush());
@@ -503,14 +516,18 @@ document.addEventListener('change',e=>{
   else { delete done[k]; pushSync({action:'unset',key:k}); }
   saveDone(); render();
 });
-$('birth').addEventListener('change',e=>{
-  const v=e.target.value;
-  if(isISO(v)&&v<=todayISO()){
-    birth=v; store.set(KEY.birth,v); store.del(KEY.age); pushSync({action:'birth',birth:v});
-    if(store.get(KEY.view)===null) view='soon';
-  } else if(!v){ birth=null; store.del(KEY.birth); pushSync({action:'birth',birth:''}); }
+function onBirth(){
+  const el=$('birth'), v=el.value;
+  if(v===(birth||'')) return;
+  if(v&&(!isISO(v)||v>todayISO())){ el.value=birth||''; return; }   // date future ou invalide : on garde l'ancienne
+  birth=v||null;
+  if(birth) store.set(KEY.birth,birth); else store.del(KEY.birth);
+  store.del(KEY.age);
+  if(birth&&store.get(KEY.view)===null) view='soon';
+  pushSync({action:'birth',birth:birth||''});
   render();
-});
+}
+['change','input','blur'].forEach(ev=>$('birth').addEventListener(ev,onBirth));
 $('q').addEventListener('input',e=>{q=e.target.value;render();});
 
 statics(); buildChips(); if(birth) $('birth').value=birth; render(); pull();

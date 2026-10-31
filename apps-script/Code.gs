@@ -48,47 +48,57 @@ function sheet_(name, header) {
 const doneSheet_ = () => sheet_(SHEET_DONE, ['clé', 'élément', 'date']);
 const cfgSheet_ = () => sheet_(SHEET_CFG, ['réglage', 'valeur']);
 
-// « 2026-10-31 » <-> cellule date
-function toCell_(iso) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso || '')) return '';
-  const [y, m, d] = iso.split('-').map(Number);
-  return new Date(y, m - 1, d);
+// Les dates sont écrites en texte « 2026-10-31 » (format de cellule « texte brut ») :
+// aucune conversion de fuseau horaire, et la page relit exactement ce qu'elle a envoyé.
+const isIso_ = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
+const pad_ = n => String(n).padStart(2, '0');
+function writeDate_(range, iso) {
+  range.setNumberFormat('@').setValue(isIso_(iso) ? iso : '');
 }
-function fromCell_(v) {
-  if (v instanceof Date) return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
-  return /^\d{4}-\d{2}-\d{2}$/.test(String(v)) ? String(v) : '';
+// Relit aussi les anciennes cellules au format date, ou une date tapée à la main (15/12/2025)
+function fromCell_(v, shown) {
+  if (v && typeof v.getTime === 'function') return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  const s = String(shown !== undefined && shown !== '' ? shown : v).trim();
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return m[1] + '-' + pad_(m[2]) + '-' + pad_(m[3]);
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) return m[3] + '-' + pad_(m[2]) + '-' + pad_(m[1]);
+  return '';
 }
 
 function rows_(s) {
   const n = s.getLastRow() - 1;
-  return n > 0 ? s.getRange(2, 1, n, s.getLastColumn()).getValues() : [];
+  if (n <= 0) return [];
+  const rng = s.getRange(2, 1, n, Math.max(3, s.getLastColumn()));
+  const v = rng.getValues(), d = rng.getDisplayValues();
+  return v.map((r, i) => ({ v: r, d: d[i] }));
 }
 function findRow_(s, key) {
-  const keys = rows_(s).map(r => String(r[0]));
+  const keys = rows_(s).map(r => String(r.v[0]));
   const i = keys.indexOf(String(key));
   return i < 0 ? -1 : i + 2;
 }
 
 function state_() {
   const done = {};
-  rows_(doneSheet_()).forEach(r => { if (r[0]) done[String(r[0])] = fromCell_(r[2]); });
+  rows_(doneSheet_()).forEach(r => { if (r.v[0]) done[String(r.v[0])] = fromCell_(r.v[2], r.d[2]); });
   let birth = null;
-  rows_(cfgSheet_()).forEach(r => { if (r[0] === 'naissance') birth = fromCell_(r[1]) || null; });
+  rows_(cfgSheet_()).forEach(r => { if (String(r.v[0]).trim() === 'naissance') birth = fromCell_(r.v[1], r.d[1]) || null; });
   return { done: done, birth: birth, updated: new Date().toISOString() };
 }
 
 function setDone_(s, key, date, label) {
-  const row = findRow_(s, key);
-  const values = [[key, label || key, toCell_(date)]];
-  if (row > 0) s.getRange(row, 1, 1, 3).setValues(values);
-  else s.appendRow(values[0]);
+  let row = findRow_(s, key);
+  if (row < 0) { s.appendRow([key, label || key, '']); row = s.getLastRow(); }
+  else s.getRange(row, 1, 1, 2).setValues([[key, label || key]]);
+  writeDate_(s.getRange(row, 3), date);
 }
 
 function setBirth_(iso) {
   const s = cfgSheet_();
-  const row = findRow_(s, 'naissance');
-  if (row > 0) s.getRange(row, 2).setValue(toCell_(iso));
-  else s.appendRow(['naissance', toCell_(iso)]);
+  let row = findRow_(s, 'naissance');
+  if (row < 0) { s.appendRow(['naissance', '']); row = s.getLastRow(); }
+  writeDate_(s.getRange(row, 2), iso);
 }
 
 function apply_(b) {
@@ -120,5 +130,4 @@ function apply_(b) {
     default:
       throw new Error('action');
   }
-  s.getRange('C:C').setNumberFormat('dd/mm/yyyy');
 }

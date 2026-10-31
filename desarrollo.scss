@@ -36,7 +36,12 @@ h1{ font-size:1.15rem; margin:0; }
 
 .age-row{
   label{ font-size:.95rem; }
-  input[type="date"]{ padding:7px 8px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--text); font:inherit; min-height:40px; }
+  input[type="date"]{
+    -webkit-appearance:none; appearance:none; display:inline-block;
+    min-width:10em; min-height:40px; padding:7px 10px; line-height:1.4; text-align:left;
+    border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--text); font:inherit;
+    &::-webkit-date-and-time-value{ text-align:left; }
+  }
   .age-txt{ font-weight:600; color:var(--accent); }
 }
 
