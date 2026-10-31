@@ -1,5 +1,13 @@
 // Données et logique de la page « Développement et vaccins »
 'use strict';
+
+/* ========= SYNCHRONISATION GOOGLE SHEETS (facultative) =========
+ * API_URL : URL « /exec » de l'Apps Script (voir apps-script/Code.gs et le README).
+ * La clé secrète n'est jamais dans le code : elle va dans le lien, https://…github.io/desarrollo-infantil/#k=TA_CLE
+ * Sans API_URL ou sans clé, tout reste seulement sur le téléphone.
+ */
+const API_URL = '';
+/* =============================================================== */
 // ---------- Données ----------
 // Items : [catégorie, n°, âge 50 %, âge 75 %, âge 95 % (mois), fr, es]
 // Lus sur l'échelle Haizea-Llevant : début de barre = 50 %, passage blanc/gris = 75 %, fin = 95 %.
@@ -187,6 +195,7 @@ const T = {
   needAge:'Indique la date de naissance pour voir ce qui est en cours et ce qui arrive bientôt.',
   nothingSoon:'Rien de prévu dans cette période.', reset:'Tout décocher', confirmReset:'Décocher tous les éléments ?',
   notes:'Notes du calendrier vaccinal',
+  syncOk:'☁ Synchronisé avec Google Sheets', syncSaving:'Enregistrement…', syncOffline:'Hors ligne : sera envoyé plus tard', syncError:'Synchronisation refusée : vérifie la clé du lien',
   src:'Sources : échelle Haizea-Llevant (modifiée d’après Fernández Álvarez E. et al., Tabla de desarrollo 0-5 años, Gobierno Vasco, 1991) et calendrier de vaccinations et immunisations systématiques de la Generalitat de Catalunya (061 Salut Respon, canalsalut.gencat.cat). Âges lus sur l’échelle : début de la barre = 50 % des enfants, fin = 95 %. Indicatif, ne remplace pas l’avis du pédiatre. Les données restent sur ce téléphone.'
  },
  es:{
@@ -208,6 +217,7 @@ const T = {
   needAge:'Indica la fecha de nacimiento para ver lo que está en curso y lo que llega pronto.',
   nothingSoon:'Nada previsto en este periodo.', reset:'Desmarcar todo', confirmReset:'¿Desmarcar todos los elementos?',
   notes:'Notas del calendario de vacunación',
+  syncOk:'☁ Sincronizado con Google Sheets', syncSaving:'Guardando…', syncOffline:'Sin conexión: se enviará más tarde', syncError:'Sincronización rechazada: revisa la clave del enlace',
   src:'Fuentes: escala Haizea-Llevant (modificada de Fernández Álvarez E. y cols., Tabla de desarrollo 0-5 años, Gobierno Vasco, 1991) y calendario de vacunaciones e inmunizaciones sistemáticas de la Generalitat de Catalunya (061 Salut Respon, canalsalut.gencat.cat). Edades leídas en la escala: inicio de la barra = 50 % de los niños, final = 95 %. Orientativo, no sustituye la opinión del pediatra. Los datos se quedan en este teléfono.'
  }
 };
@@ -404,32 +414,103 @@ function render(){
   pressed();
 }
 
+// ---------- Synchronisation Google Sheets ----------
+// Tout s'applique d'abord sur le téléphone ; les changements partent ensuite dans une file
+// (gardée sur le téléphone) et sont renvoyés dès que la connexion revient. La Sheet fait foi.
+const SKEY={key:'dev-sync-key',queue:'dev-sync-queue',synced:'dev-synced'};
+function syncKey(){
+  const h=new URLSearchParams(location.hash.slice(1)).get('k');
+  if(h){store.set(SKEY.key,h);return h;}
+  return store.get(SKEY.key)||'';
+}
+const SYNC=!!API_URL&&!!syncKey();
+let syncQueue=(()=>{try{const q=JSON.parse(store.get(SKEY.queue)||'[]');return Array.isArray(q)?q:[];}catch(e){return [];}})();
+let syncState=null, flushing=false;
+const saveQueue=()=>store.set(SKEY.queue,JSON.stringify(syncQueue));
+function labelOf(key){
+  const e=ALL.find(x=>x.key===key); if(!e) return key;
+  return e.k==='vac'?CATS.vac.fr+' · '+e.lab[1]:CATS[e.cat].fr+' · '+e.fr;
+}
+function setSync(st){
+  syncState=st; const el=$('sync'); if(!el) return;
+  el.hidden=!SYNC||!st; el.className='sync '+(st||'');
+  if(st) el.textContent=T[lang]['sync'+st.charAt(0).toUpperCase()+st.slice(1)];
+}
+function pushSync(op){ if(!SYNC) return; syncQueue.push(op); saveQueue(); flush(); }
+function applyServer(j){
+  done=j.done&&typeof j.done==='object'?j.done:{}; saveDone();
+  birth=isISO(j.birth)?j.birth:null;
+  if(birth) store.set(KEY.birth,birth); else store.del(KEY.birth);
+  $('birth').value=birth||'';
+  render();
+}
+async function flush(){
+  if(!SYNC||flushing) return; flushing=true;
+  try{
+    while(syncQueue.length){
+      setSync('saving');
+      let j;
+      try{
+        const r=await fetch(API_URL,{method:'POST',body:JSON.stringify({k:syncKey(),...syncQueue[0]})}); // text/plain : pas de pré-requête CORS
+        j=await r.json();
+      }catch(e){ setSync('offline'); return; }
+      if(j.error==='unauthorized'){ setSync('error'); return; }
+      syncQueue.shift(); saveQueue();          // une opération refusée pour une autre raison est abandonnée
+      if(!j.error&&!syncQueue.length) applyServer(j);
+    }
+    setSync('ok');
+  } finally { flushing=false; }
+}
+async function pull(){
+  if(!SYNC) return;
+  if(syncQueue.length) return flush();        // envoyer d'abord ce qui attend
+  setSync('saving');
+  let j;
+  try{ j=await (await fetch(`${API_URL}?k=${encodeURIComponent(syncKey())}&t=${Date.now()}`)).json(); }
+  catch(e){ setSync('offline'); return; }
+  if(j.error){ setSync(j.error==='unauthorized'?'error':'offline'); return; }
+  if(syncQueue.length) return flush();        // l'utilisateur a modifié entre-temps
+  const empty=!Object.keys(j.done||{}).length&&!j.birth;
+  if(empty&&!store.get(SKEY.synced)&&(Object.keys(done).length||birth)){
+    // première synchronisation : on envoie ce qui était déjà sur le téléphone
+    store.set(SKEY.synced,'1');
+    const items={}; for(const k in done) items[k]={date:done[k],label:labelOf(k)};
+    return pushSync({action:'import',done:items,birth:birth||''});
+  }
+  store.set(SKEY.synced,'1');
+  applyServer(j); setSync('ok');
+}
+window.addEventListener('online',()=>flush());
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) pull(); });
+
 // ---------- Événements ----------
 document.addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b) return;
-  if(b.dataset.l){lang=b.dataset.l;store.set(KEY.lang,lang);statics();buildChips();}
+  if(b.dataset.l){lang=b.dataset.l;store.set(KEY.lang,lang);statics();buildChips();setSync(syncState);}
   else if(b.dataset.t){tab=b.dataset.t;store.set(KEY.tab,tab);}
   else if(b.dataset.c) cat=b.dataset.c;
   else if(b.dataset.b!==undefined) band=+b.dataset.b;
   else if(b.dataset.s) status=b.dataset.s;
   else if(b.dataset.v){view=b.dataset.v;store.set(KEY.view,view);}
-  else if(b.id==='reset'){ if(confirm(T[lang].confirmReset)){done={};saveDone();} }
+  else if(b.id==='reset'){ if(confirm(T[lang].confirmReset)){done={};saveDone();pushSync({action:'reset'});} }
   else return;
   render();
 });
 document.addEventListener('change',e=>{
   const c=e.target.closest('.ck'); if(!c) return;
-  if(c.checked) done[c.dataset.k]=todayISO(); else delete done[c.dataset.k];
+  const k=c.dataset.k;
+  if(c.checked){ done[k]=todayISO(); pushSync({action:'set',key:k,date:done[k],label:labelOf(k)}); }
+  else { delete done[k]; pushSync({action:'unset',key:k}); }
   saveDone(); render();
 });
 $('birth').addEventListener('change',e=>{
   const v=e.target.value;
   if(isISO(v)&&v<=todayISO()){
-    birth=v; store.set(KEY.birth,v); store.del(KEY.age);
+    birth=v; store.set(KEY.birth,v); store.del(KEY.age); pushSync({action:'birth',birth:v});
     if(store.get(KEY.view)===null) view='soon';
-  } else if(!v){ birth=null; store.del(KEY.birth); }
+  } else if(!v){ birth=null; store.del(KEY.birth); pushSync({action:'birth',birth:''}); }
   render();
 });
 $('q').addEventListener('input',e=>{q=e.target.value;render();});
 
-statics(); buildChips(); if(birth) $('birth').value=birth; render();
+statics(); buildChips(); if(birth) $('birth').value=birth; render(); pull();

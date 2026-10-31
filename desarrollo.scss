@@ -40,6 +40,13 @@ h1{ font-size:1.15rem; margin:0; }
   .age-txt{ font-weight:600; color:var(--accent); }
 }
 
+.sync{
+  max-width:760px; margin:6px auto 0; font-size:.75rem; color:var(--muted);
+  &.ok{ color:var(--man); }
+  &.offline{ color:var(--soc); }
+  &.error{ color:var(--sa); font-weight:600; }
+}
+
 main{ padding:12px 16px 40px; max-width:760px; margin:0 auto; }
 
 .chip{
