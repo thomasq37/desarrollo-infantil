@@ -24,7 +24,7 @@ Sans réglage, les cases cochées et la date de naissance restent sur le télép
 3. **Paramètres du projet** (roue dentée) → **Propriétés du script** → ajoute `KEY` avec un mot secret de ton choix.
 4. **Déployer → Nouveau déploiement** → type **Application Web**, « Exécuter en tant que : moi », « Accès : tout le monde » → autorise, puis copie l'URL qui finit par `/exec`.
 5. Colle cette URL dans `API_URL`, en haut de `desarrollo.js`, et pousse.
-6. Ouvre `https://thomasq37.github.io/desarrollo-infantil/#k=TON_MOT_SECRET` une fois sur chaque téléphone (la clé est ensuite mémorisée), puis ajoute la page à l'écran d'accueil.
+6. Sur chaque téléphone, ouvre la page (ou l'app de l'écran d'accueil) et touche « 🔑 Activer la synchronisation » pour saisir le mot secret, une seule fois. Le lien `…/desarrollo-infantil/#k=TON_MOT_SECRET` marche aussi dans Safari, mais l'app de l'écran d'accueil a sa propre mémoire : il faut y saisir la clé avec le bouton.
 
 La Sheet contient un onglet **Acquis** (clé, élément, date) et un onglet **Réglages** (date de naissance). Ce qui était déjà coché sur le téléphone est envoyé à la première synchronisation. Hors connexion, les changements attendent et partent au retour du réseau.
 

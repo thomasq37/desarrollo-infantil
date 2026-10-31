@@ -195,7 +195,7 @@ const T = {
   needAge:'Indique la date de naissance pour voir ce qui est en cours et ce qui arrive bientôt.',
   nothingSoon:'Rien de prévu dans cette période.', reset:'Tout décocher', confirmReset:'Décocher tous les éléments ?',
   notes:'Notes du calendrier vaccinal',
-  syncOk:'☁ Synchronisé avec Google Sheets', syncSaving:'Enregistrement…', syncOffline:'Hors ligne : sera envoyé plus tard', syncError:'Synchronisation refusée : vérifie la clé du lien', syncFail:'Une modification n’a pas pu être enregistrée dans la Sheet',
+  syncOk:'☁ Synchronisé avec Google Sheets', syncSaving:'Enregistrement…', syncOffline:'Hors ligne : sera envoyé plus tard', syncError:'Synchronisation refusée : vérifie la clé du lien', syncFail:'Une modification n’a pas pu être enregistrée dans la Sheet', syncNoKey:'🔑 Activer la synchronisation', syncAsk:'Clé de synchronisation (ton mot secret) :', syncChange:'changer la clé',
   src:'Sources : échelle Haizea-Llevant (modifiée d’après Fernández Álvarez E. et al., Tabla de desarrollo 0-5 años, Gobierno Vasco, 1991) et calendrier de vaccinations et immunisations systématiques de la Generalitat de Catalunya (061 Salut Respon, canalsalut.gencat.cat). Âges lus sur l’échelle : début de la barre = 50 % des enfants, fin = 95 %. Indicatif, ne remplace pas l’avis du pédiatre. Les données restent sur ce téléphone.'
  },
  es:{
@@ -217,7 +217,7 @@ const T = {
   needAge:'Indica la fecha de nacimiento para ver lo que está en curso y lo que llega pronto.',
   nothingSoon:'Nada previsto en este periodo.', reset:'Desmarcar todo', confirmReset:'¿Desmarcar todos los elementos?',
   notes:'Notas del calendario de vacunación',
-  syncOk:'☁ Sincronizado con Google Sheets', syncSaving:'Guardando…', syncOffline:'Sin conexión: se enviará más tarde', syncError:'Sincronización rechazada: revisa la clave del enlace', syncFail:'Un cambio no se pudo guardar en la Sheet',
+  syncOk:'☁ Sincronizado con Google Sheets', syncSaving:'Guardando…', syncOffline:'Sin conexión: se enviará más tarde', syncError:'Sincronización rechazada: revisa la clave del enlace', syncFail:'Un cambio no se pudo guardar en la Sheet', syncNoKey:'🔑 Activar la sincronización', syncAsk:'Clave de sincronización (tu palabra secreta):', syncChange:'cambiar la clave',
   src:'Fuentes: escala Haizea-Llevant (modificada de Fernández Álvarez E. y cols., Tabla de desarrollo 0-5 años, Gobierno Vasco, 1991) y calendario de vacunaciones e inmunizaciones sistemáticas de la Generalitat de Catalunya (061 Salut Respon, canalsalut.gencat.cat). Edades leídas en la escala: inicio de la barra = 50 % de los niños, final = 95 %. Orientativo, no sustituye la opinión del pediatra. Los datos se quedan en este teléfono.'
  }
 };
@@ -423,7 +423,7 @@ function syncKey(){
   if(h){store.set(SKEY.key,h);return h;}
   return store.get(SKEY.key)||'';
 }
-const SYNC=!!API_URL&&!!syncKey();
+let SYNC=!!API_URL&&!!syncKey();
 let syncQueue=(()=>{try{const q=JSON.parse(store.get(SKEY.queue)||'[]');return Array.isArray(q)?q:[];}catch(e){return [];}})();
 let syncState=null, flushing=false, localGen=0;
 const saveQueue=()=>store.set(SKEY.queue,JSON.stringify(syncQueue));
@@ -433,8 +433,22 @@ function labelOf(key){
 }
 function setSync(st){
   syncState=st; const el=$('sync'); if(!el) return;
-  el.hidden=!SYNC||!st; el.className='sync '+(st||'');
-  if(st) el.textContent=T[lang]['sync'+st.charAt(0).toUpperCase()+st.slice(1)];
+  const t=T[lang];
+  if(!API_URL){ el.hidden=true; return; }
+  if(!SYNC){ // pas de clé (ex. app de l'écran d'accueil, qui a sa propre mémoire) : on propose de la saisir
+    el.hidden=false; el.className='sync nokey';
+    el.innerHTML=`<button type="button" class="keybtn" id="keyBtn">${t.syncNoKey}</button>`; return;
+  }
+  el.hidden=!st; el.className='sync '+(st||'');
+  if(!st) return;
+  const msg=t['sync'+st.charAt(0).toUpperCase()+st.slice(1)];
+  el.innerHTML=st==='error'?`${msg} · <button type="button" class="keybtn" id="keyBtn">${t.syncChange}</button>`:msg;
+}
+function askKey(){
+  const k=(prompt(T[lang].syncAsk,'')||'').trim();
+  if(!k) return;
+  store.set(SKEY.key,k); SYNC=true; syncQueue=[]; saveQueue();
+  pull();
 }
 function pushSync(op){
   if(!SYNC) return;
@@ -505,6 +519,7 @@ document.addEventListener('click',e=>{
   else if(b.dataset.b!==undefined) band=+b.dataset.b;
   else if(b.dataset.s) status=b.dataset.s;
   else if(b.dataset.v){view=b.dataset.v;store.set(KEY.view,view);}
+  else if(b.id==='keyBtn'){ askKey(); return; }
   else if(b.id==='reset'){ if(confirm(T[lang].confirmReset)){done={};saveDone();pushSync({action:'reset'});} }
   else return;
   render();
@@ -530,4 +545,4 @@ function onBirth(){
 ['change','input','blur'].forEach(ev=>$('birth').addEventListener(ev,onBirth));
 $('q').addEventListener('input',e=>{q=e.target.value;render();});
 
-statics(); buildChips(); if(birth) $('birth').value=birth; render(); pull();
+statics(); buildChips(); if(birth) $('birth').value=birth; render(); setSync(null); pull();

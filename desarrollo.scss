@@ -50,6 +50,10 @@ h1{ font-size:1.15rem; margin:0; }
   &.ok{ color:var(--man); }
   &.offline{ color:var(--soc); }
   &.error{ color:var(--sa); font-weight:600; }
+  .keybtn{
+    border:1px solid color-mix(in srgb,var(--accent) 50%,transparent); background:color-mix(in srgb,var(--accent) 10%,var(--card));
+    color:var(--accent); border-radius:999px; padding:4px 12px; font:inherit; font-size:.8rem; cursor:pointer; min-height:32px;
+  }
 }
 
 main{ padding:12px 16px 40px; max-width:760px; margin:0 auto; }
